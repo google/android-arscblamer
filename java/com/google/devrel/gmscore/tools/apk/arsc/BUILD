@@ -32,6 +32,7 @@ java_library(
         "//third_party/java/auto:auto_value",
         "//third_party/java/guava",
         "//third_party/java/guice",
+        "//third_party/java/javaxannotation",
         "//third_party/java/jcommander",
         "//third_party/java/jsr305_annotations",
         "//third_party/java/jsr330_inject",

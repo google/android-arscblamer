@@ -1,3 +1,5 @@
+load("@bazel_tools//tools/build_defs/repo:maven_rules.bzl", "maven_jar")
+
 maven_jar(
     name = "aopalliance",
     artifact = "aopalliance:aopalliance:1.0",
@@ -46,6 +48,16 @@ maven_jar(
 bind(
     name = "hamcrest-jar",
     actual = "@hamcrest//jar",
+)
+
+maven_jar(
+    name = "javaxannotation",
+    artifact = "javax.annotation:javax.annotation-api:1.3.1",
+)
+
+bind(
+    name = "javaxannotation-jar",
+    actual = "@javaxannotation//jar",
 )
 
 maven_jar(
