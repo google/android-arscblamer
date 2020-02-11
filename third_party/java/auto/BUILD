@@ -5,7 +5,10 @@ licenses(["notice"])  # Apache 2.0
 java_plugin(
     name = "auto_value_processor",
     processor_class = "com.google.auto.value.processor.AutoValueProcessor",
-    deps = ["//external:auto_value-jar"],
+    deps = [
+        "//external:auto_value-jar",
+        "//external:javaxannotation-jar",
+    ],
 )
 
 java_library(
