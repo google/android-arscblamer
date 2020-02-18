@@ -22,6 +22,7 @@ java_library(
     srcs = glob(["*.java"]),
     deps = [
         "//java/com/google/devrel/gmscore/tools/common/flags",
+        "//third_party/java/checkerframework",
         "//third_party/java/guava",
         "//third_party/java/guice",
         "//third_party/java/jcommander",

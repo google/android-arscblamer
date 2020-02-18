@@ -17,24 +17,25 @@
 package com.google.devrel.gmscore.tools.apk.arsc;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableMap.Builder;
+import com.google.common.io.Closeables;
 import com.google.common.io.LittleEndianDataOutputStream;
 import com.google.common.primitives.Shorts;
-
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
-
 import javax.annotation.Nullable;
 
 /** Represents a generic chunk. */
 public abstract class Chunk implements SerializableResource {
 
   /** Types of chunks that can exist. */
+  // See
+  // https://cs.corp.google.com/aosp-master/frameworks/base/libs/androidfw/include/androidfw/ResourceTypes.h?rcl=2b1b1bb22dcab2467f8a41825f36d6be68a031f5&l=215
   public enum Type {
     NULL(0x0000),
     STRING_POOL(0x0001),
@@ -49,18 +50,20 @@ public abstract class Chunk implements SerializableResource {
     TABLE_PACKAGE(0x0200),
     TABLE_TYPE(0x0201),
     TABLE_TYPE_SPEC(0x0202),
-    TABLE_LIBRARY(0x0203);
+    TABLE_LIBRARY(0x0203),
+    TABLE_OVERLAYABLE(0x204),
+    TABLE_OVERLAYABLE_POLICY(0x205);
 
     private final short code;
 
     private static final Map<Short, Type> FROM_SHORT;
 
     static {
-      Builder<Short, Type> builder = ImmutableMap.builder();
+      Map<Short, Type> map = new HashMap<>();
       for (Type type : values()) {
-        builder.put(type.code(), type);
+        map.put(type.code(), type);
       }
-      FROM_SHORT = builder.build();
+      FROM_SHORT = Collections.unmodifiableMap(map);
     }
 
     Type(int code) {
@@ -81,6 +84,10 @@ public abstract class Chunk implements SerializableResource {
 
   /** The number of bytes in every chunk that describes chunk type, header size, and chunk size. */
   public static final int METADATA_SIZE = 8;
+  /**
+   * The number of bytes in every chunk that describes header size and chunk size, but not the type.
+   */
+  public static final int METADATA_SIZE_NO_TYPE = METADATA_SIZE - 2;
 
   /** The offset in bytes, from the start of the chunk, where the chunk size can be found. */
   private static final int CHUNK_SIZE_OFFSET = 4;
@@ -143,9 +150,10 @@ public abstract class Chunk implements SerializableResource {
 
   /**
    * Reposition the buffer after this chunk. Use this at the end of a Chunk constructor.
+   *
    * @param buffer The buffer to be repositioned.
    */
-  private final void seekToEndOfChunk(ByteBuffer buffer) {
+  protected final void seekToEndOfChunk(ByteBuffer buffer) {
     buffer.position(offset + chunkSize);
   }
 
@@ -158,13 +166,23 @@ public abstract class Chunk implements SerializableResource {
    */
   protected final void writeHeader(ByteBuffer output, int chunkSize) {
     int start = output.position();
-    output.putShort(getType().code());
+    output.putShort(getTypeValue());
     output.putShort((short) headerSize);
     output.putInt(chunkSize);
     writeHeader(output);
     int headerBytes = output.position() - start;
     Preconditions.checkState(headerBytes == getHeaderSize(),
         "Written header is wrong size. Got %s, want %s", headerBytes, getHeaderSize());
+  }
+
+  /**
+   * Allows overwriting what value gets written as the type of a chunk. Subclasses may use a
+   * specialized type value schema.
+   *
+   * @return The type value for this chunk.
+   */
+  protected short getTypeValue() {
+    return getType().code();
   }
 
   /**
@@ -175,15 +193,15 @@ public abstract class Chunk implements SerializableResource {
   protected void writeHeader(ByteBuffer output) {}
 
   /**
-   * Writes the chunk payload. The payload is data in a chunk which is not in
-   * the first {@code headerSize} bytes of the chunk.
+   * Writes the chunk payload. The payload is data in a chunk which is not in the first {@code
+   * headerSize} bytes of the chunk.
    *
    * @param output The stream that the payload will be written to.
    * @param header The already-written header. This can be modified to fix payload offsets.
-   * @param shrink True if this payload should be optimized for size.
+   * @param options The serialization options to be applied to the result.
    * @throws IOException Thrown if {@code output} could not be written to (out of memory).
    */
-  protected void writePayload(DataOutput output, ByteBuffer header, boolean shrink)
+  protected void writePayload(DataOutput output, ByteBuffer header, int options)
       throws IOException {}
 
   /**
@@ -194,7 +212,7 @@ public abstract class Chunk implements SerializableResource {
    * @return The new length of {@code output}
    * @throws IOException Thrown if {@code output} could not be written to.
    */
-  protected int writePad(DataOutput output, int currentLength) throws IOException {
+  protected static int writePad(DataOutput output, int currentLength) throws IOException {
     while (currentLength % PAD_BOUNDARY != 0) {
       output.write(0);
       ++currentLength;
@@ -204,7 +222,7 @@ public abstract class Chunk implements SerializableResource {
 
   @Override
   public final byte[] toByteArray() throws IOException {
-    return toByteArray(false);
+    return toByteArray(SerializableResource.NONE);
   }
 
   /**
@@ -212,13 +230,15 @@ public abstract class Chunk implements SerializableResource {
    * override this method unless your header changes based on the contents / size of the payload.
    */
   @Override
-  public final byte[] toByteArray(boolean shrink) throws IOException {
+  public final byte[] toByteArray(int options) throws IOException {
     ByteBuffer header = ByteBuffer.allocate(getHeaderSize()).order(ByteOrder.LITTLE_ENDIAN);
     writeHeader(header, 0);  // The chunk size isn't known yet. This will be filled in later.
     ByteArrayOutputStream baos = new ByteArrayOutputStream();
-
-    try (LittleEndianDataOutputStream payload = new LittleEndianDataOutputStream(baos)) {
-      writePayload(payload, header, shrink);
+    LittleEndianDataOutputStream payload = new LittleEndianDataOutputStream(baos);
+    try {
+      writePayload(payload, header, options);
+    } finally {
+      Closeables.close(payload, true);
     }
 
     byte[] payloadBytes = baos.toByteArray();
@@ -299,4 +319,5 @@ public abstract class Chunk implements SerializableResource {
     result.seekToEndOfChunk(buffer);
     return result;
   }
+
 }

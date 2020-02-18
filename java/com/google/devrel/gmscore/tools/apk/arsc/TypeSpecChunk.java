@@ -16,22 +16,24 @@
 
 package com.google.devrel.gmscore.tools.apk.arsc;
 
+import com.google.common.base.Preconditions;
 import com.google.common.primitives.UnsignedBytes;
-
 import java.io.DataOutput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-
 import javax.annotation.Nullable;
 
 /** A chunk that contains a collection of resource entries for a particular resource data type. */
-public final class TypeSpecChunk extends Chunk {
+public class TypeSpecChunk extends Chunk {
+
+  /** Flag indicating that a resource entry is public. */
+  private static final int SPEC_PUBLIC = 0x40000000;
 
   /** The id of the resource type that this type spec refers to. */
-  private final int id;
+  private int id;
 
-  /** Resource configuration masks. */
-  private final int[] resources;
+  /** Flags for entries at a given index. */
+  private int[] resources;
 
   protected TypeSpecChunk(ByteBuffer buffer, @Nullable Chunk parent) {
     super(buffer, parent);
@@ -39,7 +41,6 @@ public final class TypeSpecChunk extends Chunk {
     buffer.position(buffer.position() + 3);  // Skip 3 bytes for packing
     int resourceCount = buffer.getInt();
     resources = new int[resourceCount];
-
     for (int i = 0; i < resourceCount; ++i) {
       resources[i] = buffer.getInt();
     }
@@ -53,9 +54,20 @@ public final class TypeSpecChunk extends Chunk {
     return id;
   }
 
+  /**
+   * Sets the id of this chunk.
+   *
+   * @param newId The new id to use.
+   */
+  public void setId(int newId) {
+    // Ids are 1-based.
+    Preconditions.checkState(newId >= 1);
+    id = newId;
+  }
+
   /** Returns the number of resource entries that this chunk has configuration masks for. */
   public int getResourceCount() {
-    return resources.length;
+    return getResources().length;
   }
 
   @Override
@@ -73,10 +85,21 @@ public final class TypeSpecChunk extends Chunk {
   }
 
   @Override
-  protected void writePayload(DataOutput output, ByteBuffer header, boolean shrink)
+  protected void writePayload(DataOutput output, ByteBuffer header, int options)
       throws IOException {
-    for (int resource : resources) {
-      output.writeInt(resource);
+    final int resourceMask =
+        ((options & SerializableResource.PRIVATE_RESOURCES) != 0) ? ~SPEC_PUBLIC : ~0;
+    for (int resource : getResources()) {
+      output.writeInt(resource & resourceMask);
     }
+  }
+
+  /** Resource configuration masks. */
+  public int[] getResources() {
+    return resources;
+  }
+
+  public void setResources(int[] resources) {
+    this.resources = resources;
   }
 }

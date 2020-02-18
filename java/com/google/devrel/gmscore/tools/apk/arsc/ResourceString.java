@@ -16,13 +16,10 @@
 
 package com.google.devrel.gmscore.tools.apk.arsc;
 
-import static java.nio.charset.StandardCharsets.UTF_16LE;
-import static java.nio.charset.StandardCharsets.UTF_8;
-
+import com.google.common.base.Charsets;
 import com.google.common.io.ByteArrayDataOutput;
 import com.google.common.io.ByteStreams;
 import com.google.common.primitives.UnsignedBytes;
-
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 
@@ -31,8 +28,8 @@ public final class ResourceString {
 
   /** Type of {@link ResourceString} to encode / decode. */
   public enum Type {
-    UTF8(UTF_8),
-    UTF16(UTF_16LE);
+    UTF8(Charsets.UTF_8),
+    UTF16(Charsets.UTF_16LE);
 
     private final Charset charset;
 
@@ -65,18 +62,26 @@ public final class ResourceString {
    * @return The decoded string.
    */
   public static String decodeString(ByteBuffer buffer, int offset, Type type) {
-    int length;
     int characterCount = decodeLength(buffer, offset, type);
     offset += computeLengthOffset(characterCount, type);
     // UTF-8 strings have 2 lengths: the number of characters, and then the encoding length.
     // UTF-16 strings, however, only have 1 length: the number of characters.
     if (type == Type.UTF8) {
-      length = decodeLength(buffer, offset, type);
+      int length = decodeLength(buffer, offset, type);
       offset += computeLengthOffset(length, type);
+
+      int origPosition = buffer.position();
+      buffer.position(offset);
+      try {
+        char[] chars = UtfUtil.decodeUtf8OrModifiedUtf8(buffer, characterCount);
+        return new String(chars);
+      } finally {
+        buffer.position(origPosition);
+      }
     } else {
-      length = characterCount * 2;
+      int length = characterCount * 2;
+      return new String(buffer.array(), offset, length, type.charset());
     }
-    return new String(buffer.array(), offset, length, type.charset());
   }
 
   /**

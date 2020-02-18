@@ -17,7 +17,6 @@
 package com.google.devrel.gmscore.tools.apk.arsc;
 
 import com.google.auto.value.AutoValue;
-
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
@@ -69,6 +68,11 @@ public abstract class XmlAttribute implements SerializableResource {
     int name = buffer.getInt();
     int rawValue = buffer.getInt();
     ResourceValue typedValue = ResourceValue.create(buffer);
+    return create(namespace, name, rawValue, typedValue, parent);
+  }
+
+  public static XmlAttribute create(
+      int namespace, int name, int rawValue, ResourceValue typedValue, XmlNodeChunk parent) {
     return new AutoValue_XmlAttribute(namespace, name, rawValue, typedValue, parent);
   }
 
@@ -78,16 +82,16 @@ public abstract class XmlAttribute implements SerializableResource {
 
   @Override
   public byte[] toByteArray() {
-    return toByteArray(false);
+    return toByteArray(SerializableResource.NONE);
   }
 
   @Override
-  public byte[] toByteArray(boolean shrink) {
+  public byte[] toByteArray(int options) {
     ByteBuffer buffer = ByteBuffer.allocate(SIZE).order(ByteOrder.LITTLE_ENDIAN);
     buffer.putInt(namespaceIndex());
     buffer.putInt(nameIndex());
     buffer.putInt(rawValueIndex());
-    buffer.put(typedValue().toByteArray(shrink));
+    buffer.put(typedValue().toByteArray(options));
     return buffer.array();
   }
 

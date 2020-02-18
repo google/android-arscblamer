@@ -16,12 +16,12 @@
 
 package com.google.devrel.gmscore.tools.apk.arsc;
 
+import com.google.common.base.Preconditions;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-
 import javax.annotation.Nullable;
 
 /**
@@ -66,9 +66,18 @@ public class XmlResourceMapChunk extends Chunk {
     return result;
   }
 
-  /** Returns the resource ID that this {@code attributeId} maps to. */
+  /**
+   * Returns the resource ID that {@code attributeId} maps to iff {@link #hasResourceId} returns
+   * true for the given {@code attributeId}.
+   */
   public ResourceIdentifier getResourceId(int attributeId) {
+    Preconditions.checkArgument(hasResourceId(attributeId), "Attribute ID is not a valid index.");
     return ResourceIdentifier.create(resources.get(attributeId));
+  }
+
+  /** Returns true if a resource ID exists for the given {@code attributeId}. */
+  public boolean hasResourceId(int attributeId) {
+    return attributeId >= 0 && resources.size() > attributeId;
   }
 
   @Override
@@ -77,9 +86,9 @@ public class XmlResourceMapChunk extends Chunk {
   }
 
   @Override
-  protected void writePayload(DataOutput output, ByteBuffer header, boolean shrink)
+  protected void writePayload(DataOutput output, ByteBuffer header, int options)
       throws IOException {
-    super.writePayload(output, header, shrink);
+    super.writePayload(output, header, options);
     for (Integer resource : resources) {
       output.writeInt(resource);
     }

@@ -17,7 +17,7 @@
 package com.google.devrel.gmscore.tools.apk.arsc;
 
 import java.nio.ByteBuffer;
-
+import java.util.Locale;
 import javax.annotation.Nullable;
 
 /** The common superclass for the various types of XML nodes. */
@@ -92,6 +92,7 @@ public abstract class XmlNodeChunk extends Chunk {
    */
   @Override
   public String toString() {
-    return String.format("XmlNodeChunk{line=%d, comment=%s}", getLineNumber(), getComment());
+    return String.format(
+        Locale.US, "XmlNodeChunk{line=%d, comment=%s}", getLineNumber(), getComment());
   }
 }

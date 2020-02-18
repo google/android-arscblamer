@@ -34,8 +34,18 @@ public final class PackageUtils {
    * @return The package name.
    */
   public static String readPackageName(ByteBuffer buffer, int offset) {
+    byte[] data = buffer.array();
+    int length = 0;
+    // Look for the null terminator for the string instead of using the entire buffer.
+    // It's UTF-16 so check 2 bytes at a time to see if its double 0.
+    for (int i = offset; i < data.length && i < PACKAGE_NAME_SIZE + offset; i += 2) {
+      if (data[i] == 0 && data[i + 1] == 0) {
+        length = i - offset;
+        break;
+      }
+    }
     Charset utf16 = Charset.forName("UTF-16LE");
-    String str = new String(buffer.array(), offset, PACKAGE_NAME_SIZE, utf16);
+    String str = new String(data, offset, length, utf16);
     buffer.position(offset + PACKAGE_NAME_SIZE);
     return str;
   }
@@ -46,6 +56,11 @@ public final class PackageUtils {
    * @param packageName The package name that will be written to the buffer.
    */
   public static void writePackageName(ByteBuffer buffer, String packageName) {
-    buffer.put(packageName.getBytes(Charset.forName("UTF-16LE")), 0, PACKAGE_NAME_SIZE);
+    byte[] nameBytes = packageName.getBytes(Charset.forName("UTF-16LE"));
+    buffer.put(nameBytes, 0, Math.min(nameBytes.length, PACKAGE_NAME_SIZE));
+    if (nameBytes.length < PACKAGE_NAME_SIZE) {
+      // pad out the remaining space with an empty array.
+      buffer.put(new byte[PACKAGE_NAME_SIZE - nameBytes.length]);
+    }
   }
 }

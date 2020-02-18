@@ -19,7 +19,6 @@ package com.google.devrel.gmscore.tools.apk.arsc;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-
 import javax.annotation.Nullable;
 
 /**
@@ -50,7 +49,7 @@ public final class UnknownChunk extends Chunk {
   }
 
   @Override
-  protected void writePayload(DataOutput output, ByteBuffer header, boolean shrink)
+  protected void writePayload(DataOutput output, ByteBuffer header, int options)
       throws IOException {
     output.write(payload);
   }

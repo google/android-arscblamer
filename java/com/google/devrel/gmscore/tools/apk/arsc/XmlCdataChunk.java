@@ -19,7 +19,7 @@ package com.google.devrel.gmscore.tools.apk.arsc;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-
+import java.util.Locale;
 import javax.annotation.Nullable;
 
 /** Represents an XML cdata node. */
@@ -53,9 +53,9 @@ public final class XmlCdataChunk extends XmlNodeChunk {
   }
 
   @Override
-  protected void writePayload(DataOutput output, ByteBuffer header, boolean shrink)
+  protected void writePayload(DataOutput output, ByteBuffer header, int options)
       throws IOException {
-    super.writePayload(output, header, shrink);
+    super.writePayload(output, header, options);
     output.writeInt(rawValue);
     output.write(resourceValue.toByteArray());
   }
@@ -68,7 +68,11 @@ public final class XmlCdataChunk extends XmlNodeChunk {
    */
   @Override
   public String toString() {
-    return String.format("XmlCdataChunk{line=%d, comment=%s, value=%s}",
-        getLineNumber(), getComment(), getRawValue());
+    return String.format(
+        Locale.US,
+        "XmlCdataChunk{line=%d, comment=%s, value=%s}",
+        getLineNumber(),
+        getComment(),
+        getRawValue());
   }
 }

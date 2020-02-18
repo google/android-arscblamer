@@ -12,7 +12,7 @@ bind(
 
 maven_jar(
     name = "auto_value",
-    artifact = "com.google.auto.value:auto-value:1.0",
+    artifact = "com.google.auto.value:auto-value:1.2",
 )
 
 bind(
@@ -22,12 +22,22 @@ bind(
 
 maven_jar(
     name = "guava",
-    artifact = "com.google.guava:guava:19.0",
+    artifact = "com.google.guava:guava:28.0-android",
 )
 
 bind(
     name = "guava-jar",
     actual = "@guava//jar",
+)
+
+maven_jar(
+    name = "guava_failureaccess",
+    artifact = "com.google.guava:failureaccess:1.0.1",
+)
+
+bind(
+    name = "guava_failureaccess-jar",
+    actual = "@guava_failureaccess//jar",
 )
 
 maven_jar(
@@ -108,6 +118,16 @@ maven_jar(
 bind(
     name = "opencsv-jar",
     actual = "@opencsv//jar",
+)
+
+maven_jar(
+    name = "checkerframework",
+    artifact = "org.checkerframework:checker-compat-qual:2.3.0",
+)
+
+bind(
+    name = "checkerframework-jar",
+    actual = "@checkerframework//jar",
 )
 
 maven_jar(
