@@ -35,7 +35,7 @@ public abstract class Chunk implements SerializableResource {
 
   /** Types of chunks that can exist. */
   // See
-  // https://cs.corp.google.com/aosp-master/frameworks/base/libs/androidfw/include/androidfw/ResourceTypes.h?rcl=2b1b1bb22dcab2467f8a41825f36d6be68a031f5&l=215
+  // https://android.googlesource.com/platform/frameworks/base/+/refs/heads/master/libs/androidfw/include/androidfw/ResourceTypes.h
   public enum Type {
     NULL(0x0000),
     STRING_POOL(0x0001),
