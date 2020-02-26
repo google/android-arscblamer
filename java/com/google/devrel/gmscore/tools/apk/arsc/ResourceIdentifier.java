@@ -16,13 +16,14 @@
 
 package com.google.devrel.gmscore.tools.apk.arsc;
 
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.auto.value.AutoValue;
-import com.google.common.base.Preconditions;
 
 /**
- * Resources in a {@link ResourceTableChunk} are identified by an integer of the form 0xpptteeee,
- * where pp is the {@link PackageChunk} id, tt is the {@link TypeChunk} id, and eeee is the index of
- * the entry in the {@link TypeChunk}.
+ * Represents a resource id in a {@link ResourceTableChunk} of the form 0xpptteeee, where pp is the
+ * {@link PackageChunk} id, tt is the {@link TypeChunk} id, and eeee is the index of the entry in
+ * the {@link TypeChunk}.
  */
 @AutoValue
 public abstract class ResourceIdentifier {
@@ -58,9 +59,23 @@ public abstract class ResourceIdentifier {
 
   /** Returns a {@link ResourceIdentifier} with the given identifiers. */
   public static ResourceIdentifier create(int packageId, int typeId, int entryId) {
-    Preconditions.checkState((packageId & 0xFF) == packageId, "packageId must be <= 0xFF.");
-    Preconditions.checkState((typeId & 0xFF) == typeId, "typeId must be <= 0xFF.");
-    Preconditions.checkState((entryId & 0xFFFF) == entryId, "entryId must be <= 0xFFFF.");
+    checkState((packageId & 0xFF) == packageId, "packageId must be <= 0xFF.");
+    checkState((typeId & 0xFF) == typeId, "typeId must be <= 0xFF.");
+    checkState((entryId & 0xFFFF) == entryId, "entryId must be <= 0xFFFF.");
     return new AutoValue_ResourceIdentifier(packageId, typeId, entryId);
   }
+
+  /** Returns the resource id from the integer representation. */
+  public static int entryIdFromResourceId(int resourceId) {
+    return resourceId & ENTRY_ID_MASK;
+  }
+
+  /** Returns the resource id as an integer with an alternative entryId. */
+  public static int asInt(int packageId, int typeId, int entryId) {
+    checkState((packageId & 0xFF) == packageId, "packageId must be <= 0xFF.");
+    checkState((typeId & 0xFF) == typeId, "typeId must be <= 0xFF.");
+    checkState((entryId & 0xFFFF) == entryId, "entryId must be <= 0xFFFF.");
+    return packageId << PACKAGE_ID_SHIFT | typeId << TYPE_ID_SHIFT | entryId;
+  }
+
 }

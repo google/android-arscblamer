@@ -16,19 +16,18 @@
 
 package com.google.devrel.gmscore.tools.apk.arsc;
 
-import static java.nio.charset.StandardCharsets.US_ASCII;
-
 import com.google.auto.value.AutoValue;
+import com.google.common.base.Charsets;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
+import com.google.common.primitives.Bytes;
 import com.google.common.primitives.UnsignedBytes;
-
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -36,12 +35,19 @@ import java.util.Map;
 @AutoValue
 public abstract class ResourceConfiguration implements SerializableResource {
 
-  /** The different types of configs that can be present in a {@link ResourceConfiguration}. */
+  /**
+   * The different types of configs that can be present in a {@link ResourceConfiguration}.
+   *
+   * <p>The ordering of these types is roughly the same as {@code #isBetterThan}, but is not
+   * guaranteed to be the same.
+   */
   public enum Type {
     MCC,
     MNC,
     LANGUAGE_STRING,
+    LOCALE_SCRIPT_STRING,
     REGION_STRING,
+    LOCALE_VARIANT_STRING,
     SCREEN_LAYOUT_DIRECTION,
     SMALLEST_SCREEN_WIDTH_DP,
     SCREEN_WIDTH_DP,
@@ -49,6 +55,8 @@ public abstract class ResourceConfiguration implements SerializableResource {
     SCREEN_LAYOUT_SIZE,
     SCREEN_LAYOUT_LONG,
     SCREEN_LAYOUT_ROUND,
+    COLOR_MODE_WIDE_COLOR_GAMUT, // NB: COLOR_GAMUT takes priority over HDR in #isBetterThan.
+    COLOR_MODE_HDR,
     ORIENTATION,
     UI_MODE_TYPE,
     UI_MODE_NIGHT,
@@ -58,131 +66,252 @@ public abstract class ResourceConfiguration implements SerializableResource {
     KEYBOARD,
     NAVIGATION_HIDDEN,
     NAVIGATION,
+    SCREEN_SIZE,
     SDK_VERSION
   }
 
+  private static final ResourceConfiguration.Builder DEFAULT_BUILDER = builder();
+
+  /**
+   * The default configuration. This configuration acts as a "catch-all" for looking up resources
+   * when no better configuration can be found.
+   */
+  public static final ResourceConfiguration DEFAULT = DEFAULT_BUILDER.build();
+
   /** The below constants are from android.content.res.Configuration. */
-  private static final int DENSITY_DPI_UNDEFINED = 0;
-  private static final int DENSITY_DPI_LDPI = 120;
-  private static final int DENSITY_DPI_MDPI = 160;
-  private static final int DENSITY_DPI_TVDPI = 213;
-  private static final int DENSITY_DPI_HDPI = 240;
-  private static final int DENSITY_DPI_XHDPI = 320;
-  private static final int DENSITY_DPI_XXHDPI = 480;
-  private static final int DENSITY_DPI_XXXHDPI = 640;
-  private static final int DENSITY_DPI_ANY  = 0xFFFE;
-  private static final int DENSITY_DPI_NONE = 0xFFFF;
-  private static final Map<Integer, String> DENSITY_DPI_VALUES =
-      ImmutableMap.<Integer, String>builder()
-      .put(DENSITY_DPI_UNDEFINED, "")
-      .put(DENSITY_DPI_LDPI, "ldpi")
-      .put(DENSITY_DPI_MDPI, "mdpi")
-      .put(DENSITY_DPI_TVDPI, "tvdpi")
-      .put(DENSITY_DPI_HDPI, "hdpi")
-      .put(DENSITY_DPI_XHDPI, "xhdpi")
-      .put(DENSITY_DPI_XXHDPI, "xxhdpi")
-      .put(DENSITY_DPI_XXXHDPI, "xxxhdpi")
-      .put(DENSITY_DPI_ANY, "anydpi")
-      .put(DENSITY_DPI_NONE, "nodpi")
-      .build();
+  static final int COLOR_MODE_WIDE_COLOR_GAMUT_MASK = 0x03;
 
-  private static final int KEYBOARD_NOKEYS = 1;
-  private static final int KEYBOARD_QWERTY = 2;
-  private static final int KEYBOARD_12KEY  = 3;
-  private static final Map<Integer, String> KEYBOARD_VALUES = ImmutableMap.of(
-      KEYBOARD_NOKEYS, "nokeys",
-      KEYBOARD_QWERTY, "qwerty",
-      KEYBOARD_12KEY, "12key");
+  static final int COLOR_MODE_WIDE_COLOR_GAMUT_UNDEFINED = 0;
+  static final int COLOR_MODE_WIDE_COLOR_GAMUT_NO = 0x01;
+  static final int COLOR_MODE_WIDE_COLOR_GAMUT_YES = 0x02;
 
-  private static final int KEYBOARDHIDDEN_MASK = 0x03;
-  private static final int KEYBOARDHIDDEN_NO   = 1;
-  private static final int KEYBOARDHIDDEN_YES  = 2;
-  private static final int KEYBOARDHIDDEN_SOFT = 3;
-  private static final Map<Integer, String> KEYBOARDHIDDEN_VALUES = ImmutableMap.of(
-      KEYBOARDHIDDEN_NO, "keysexposed",
-      KEYBOARDHIDDEN_YES, "keyshidden",
-      KEYBOARDHIDDEN_SOFT, "keyssoft");
+  private static final Map<Integer, String> COLOR_MODE_WIDE_COLOR_GAMUT_VALUES;
 
-  private static final int NAVIGATION_NONAV     = 1;
-  private static final int NAVIGATION_DPAD      = 2;
-  private static final int NAVIGATION_TRACKBALL = 3;
-  private static final int NAVIGATION_WHEEL     = 4;
-  private static final Map<Integer, String> NAVIGATION_VALUES = ImmutableMap.of(
-      NAVIGATION_NONAV, "nonav",
-      NAVIGATION_DPAD, "dpad",
-      NAVIGATION_TRACKBALL, "trackball",
-      NAVIGATION_WHEEL, "wheel");
+  static {
+    Map<Integer, String> map = new HashMap<>();
+    map.put(COLOR_MODE_WIDE_COLOR_GAMUT_UNDEFINED, "");
+    map.put(COLOR_MODE_WIDE_COLOR_GAMUT_NO, "nowidecg");
+    map.put(COLOR_MODE_WIDE_COLOR_GAMUT_YES, "widecg");
+    COLOR_MODE_WIDE_COLOR_GAMUT_VALUES = Collections.unmodifiableMap(map);
+  }
 
-  private static final int NAVIGATIONHIDDEN_MASK  = 0x0C;
-  private static final int NAVIGATIONHIDDEN_NO    = 0x04;
-  private static final int NAVIGATIONHIDDEN_YES   = 0x08;
-  private static final Map<Integer, String> NAVIGATIONHIDDEN_VALUES = ImmutableMap.of(
-      NAVIGATIONHIDDEN_NO, "navexposed",
-      NAVIGATIONHIDDEN_YES, "navhidden");
+  static final int COLOR_MODE_HDR_MASK = 0x0C;
+  static final int COLOR_MODE_HDR_UNDEFINED = 0;
+  static final int COLOR_MODE_HDR_NO = 0x04;
+  static final int COLOR_MODE_HDR_YES = 0x08;
 
-  private static final int ORIENTATION_PORTRAIT  = 0x01;
-  private static final int ORIENTATION_LANDSCAPE = 0x02;
-  private static final Map<Integer, String> ORIENTATION_VALUES = ImmutableMap.of(
-      ORIENTATION_PORTRAIT, "port",
-      ORIENTATION_LANDSCAPE, "land");
+  private static final Map<Integer, String> COLOR_MODE_HDR_VALUES;
 
-  private static final int SCREENLAYOUT_LAYOUTDIR_MASK = 0xC0;
-  private static final int SCREENLAYOUT_LAYOUTDIR_LTR  = 0x40;
-  private static final int SCREENLAYOUT_LAYOUTDIR_RTL  = 0x80;
-  private static final Map<Integer, String> SCREENLAYOUT_LAYOUTDIR_VALUES = ImmutableMap.of(
-      SCREENLAYOUT_LAYOUTDIR_LTR, "ldltr",
-      SCREENLAYOUT_LAYOUTDIR_RTL, "ldrtl");
+  static {
+    Map<Integer, String> map = new HashMap<>();
+    map.put(COLOR_MODE_HDR_UNDEFINED, "");
+    map.put(COLOR_MODE_HDR_NO, "lowdr");
+    map.put(COLOR_MODE_HDR_YES, "highdr");
+    COLOR_MODE_HDR_VALUES = Collections.unmodifiableMap(map);
+  }
 
-  private static final int SCREENLAYOUT_LONG_MASK = 0x30;
-  private static final int SCREENLAYOUT_LONG_NO   = 0x10;
-  private static final int SCREENLAYOUT_LONG_YES  = 0x20;
-  private static final Map<Integer, String> SCREENLAYOUT_LONG_VALUES = ImmutableMap.of(
-      SCREENLAYOUT_LONG_NO, "notlong",
-      SCREENLAYOUT_LONG_YES, "long");
+  static final int DENSITY_DPI_UNDEFINED = 0;
+  static final int DENSITY_DPI_LDPI = 120;
+  static final int DENSITY_DPI_MDPI = 160;
+  static final int DENSITY_DPI_TVDPI = 213;
+  static final int DENSITY_DPI_HDPI = 240;
+  static final int DENSITY_DPI_XHDPI = 320;
+  static final int DENSITY_DPI_XXHDPI = 480;
+  static final int DENSITY_DPI_XXXHDPI = 640;
+  static final int DENSITY_DPI_ANY  = 0xFFFE;
+  static final int DENSITY_DPI_NONE = 0xFFFF;
 
-  private static final int SCREENLAYOUT_ROUND_MASK = 0x0300;
-  private static final int SCREENLAYOUT_ROUND_NO   = 0x0100;
-  private static final int SCREENLAYOUT_ROUND_YES  = 0x0200;
-  private static final Map<Integer, String> SCREENLAYOUT_ROUND_VALUES = ImmutableMap.of(
-      SCREENLAYOUT_ROUND_NO, "notround",
-      SCREENLAYOUT_ROUND_YES, "round");
+  private static final Map<Integer, String> DENSITY_DPI_VALUES;
 
-  private static final int SCREENLAYOUT_SIZE_MASK   = 0x0F;
-  private static final int SCREENLAYOUT_SIZE_SMALL  = 0x01;
-  private static final int SCREENLAYOUT_SIZE_NORMAL = 0x02;
-  private static final int SCREENLAYOUT_SIZE_LARGE  = 0x03;
-  private static final int SCREENLAYOUT_SIZE_XLARGE = 0x04;
-  private static final Map<Integer, String> SCREENLAYOUT_SIZE_VALUES = ImmutableMap.of(
-      SCREENLAYOUT_SIZE_SMALL, "small",
-      SCREENLAYOUT_SIZE_NORMAL, "normal",
-      SCREENLAYOUT_SIZE_LARGE, "large",
-      SCREENLAYOUT_SIZE_XLARGE, "xlarge");
+  static {
+    Map<Integer, String> map = new HashMap<>();
+    map.put(DENSITY_DPI_UNDEFINED, "");
+    map.put(DENSITY_DPI_LDPI, "ldpi");
+    map.put(DENSITY_DPI_MDPI, "mdpi");
+    map.put(DENSITY_DPI_TVDPI, "tvdpi");
+    map.put(DENSITY_DPI_HDPI, "hdpi");
+    map.put(DENSITY_DPI_XHDPI, "xhdpi");
+    map.put(DENSITY_DPI_XXHDPI, "xxhdpi");
+    map.put(DENSITY_DPI_XXXHDPI, "xxxhdpi");
+    map.put(DENSITY_DPI_ANY, "anydpi");
+    map.put(DENSITY_DPI_NONE, "nodpi");
+    DENSITY_DPI_VALUES = Collections.unmodifiableMap(map);
+  }
 
-  private static final int TOUCHSCREEN_NOTOUCH = 1;
-  private static final int TOUCHSCREEN_FINGER  = 3;
-  private static final Map<Integer, String> TOUCHSCREEN_VALUES = ImmutableMap.of(
-      TOUCHSCREEN_NOTOUCH, "notouch",
-      TOUCHSCREEN_FINGER, "finger");
+  static final int KEYBOARD_NOKEYS = 1;
+  static final int KEYBOARD_QWERTY = 2;
+  static final int KEYBOARD_12KEY  = 3;
 
-  private static final int UI_MODE_NIGHT_MASK = 0x30;
-  private static final int UI_MODE_NIGHT_NO   = 0x10;
-  private static final int UI_MODE_NIGHT_YES  = 0x20;
-  private static final Map<Integer, String> UI_MODE_NIGHT_VALUES = ImmutableMap.of(
-      UI_MODE_NIGHT_NO, "notnight",
-      UI_MODE_NIGHT_YES, "night");
+  private static final Map<Integer, String> KEYBOARD_VALUES;
 
-  private static final int UI_MODE_TYPE_MASK       = 0x0F;
-  private static final int UI_MODE_TYPE_DESK       = 0x02;
-  private static final int UI_MODE_TYPE_CAR        = 0x03;
-  private static final int UI_MODE_TYPE_TELEVISION = 0x04;
-  private static final int UI_MODE_TYPE_APPLIANCE  = 0x05;
-  private static final int UI_MODE_TYPE_WATCH      = 0x06;
-  private static final Map<Integer, String> UI_MODE_TYPE_VALUES = ImmutableMap.of(
-      UI_MODE_TYPE_DESK, "desk",
-      UI_MODE_TYPE_CAR, "car",
-      UI_MODE_TYPE_TELEVISION, "television",
-      UI_MODE_TYPE_APPLIANCE, "appliance",
-      UI_MODE_TYPE_WATCH, "watch");
+  static {
+    Map<Integer, String> map = new HashMap<>();
+    map.put(KEYBOARD_NOKEYS, "nokeys");
+    map.put(KEYBOARD_QWERTY, "qwerty");
+    map.put(KEYBOARD_12KEY, "12key");
+    KEYBOARD_VALUES = Collections.unmodifiableMap(map);
+  }
+
+  static final int KEYBOARDHIDDEN_MASK = 0x03;
+  static final int KEYBOARDHIDDEN_NO   = 1;
+  static final int KEYBOARDHIDDEN_YES  = 2;
+  static final int KEYBOARDHIDDEN_SOFT = 3;
+
+  private static final Map<Integer, String> KEYBOARDHIDDEN_VALUES;
+
+  static {
+    Map<Integer, String> map = new HashMap<>();
+    map.put(KEYBOARDHIDDEN_NO, "keysexposed");
+    map.put(KEYBOARDHIDDEN_YES, "keyshidden");
+    map.put(KEYBOARDHIDDEN_SOFT, "keyssoft");
+    KEYBOARDHIDDEN_VALUES = Collections.unmodifiableMap(map);
+  }
+
+  static final int NAVIGATION_NONAV     = 1;
+  static final int NAVIGATION_DPAD      = 2;
+  static final int NAVIGATION_TRACKBALL = 3;
+  static final int NAVIGATION_WHEEL     = 4;
+
+  private static final Map<Integer, String> NAVIGATION_VALUES;
+
+  static {
+    Map<Integer, String> map = new HashMap<>();
+    map.put(NAVIGATION_NONAV, "nonav");
+    map.put(NAVIGATION_DPAD, "dpad");
+    map.put(NAVIGATION_TRACKBALL, "trackball");
+    map.put(NAVIGATION_WHEEL, "wheel");
+    NAVIGATION_VALUES = Collections.unmodifiableMap(map);
+  }
+
+  static final int NAVIGATIONHIDDEN_MASK  = 0x0C;
+  static final int NAVIGATIONHIDDEN_NO    = 0x04;
+  static final int NAVIGATIONHIDDEN_YES   = 0x08;
+
+  private static final Map<Integer, String> NAVIGATIONHIDDEN_VALUES;
+
+  static {
+    Map<Integer, String> map = new HashMap<>();
+    map.put(NAVIGATIONHIDDEN_NO, "navexposed");
+    map.put(NAVIGATIONHIDDEN_YES, "navhidden");
+    NAVIGATIONHIDDEN_VALUES = Collections.unmodifiableMap(map);
+  }
+
+  static final int ORIENTATION_PORTRAIT  = 0x01;
+  static final int ORIENTATION_LANDSCAPE = 0x02;
+
+  private static final Map<Integer, String> ORIENTATION_VALUES;
+
+  static {
+    Map<Integer, String> map = new HashMap<>();
+    map.put(ORIENTATION_PORTRAIT, "port");
+    map.put(ORIENTATION_LANDSCAPE, "land");
+    ORIENTATION_VALUES = Collections.unmodifiableMap(map);
+  }
+
+  static final int SCREENLAYOUT_LAYOUTDIR_MASK = 0xC0;
+  static final int SCREENLAYOUT_LAYOUTDIR_LTR  = 0x40;
+  static final int SCREENLAYOUT_LAYOUTDIR_RTL  = 0x80;
+
+  private static final Map<Integer, String> SCREENLAYOUT_LAYOUTDIR_VALUES;
+
+  static {
+    Map<Integer, String> map = new HashMap<>();
+    map.put(SCREENLAYOUT_LAYOUTDIR_LTR, "ldltr");
+    map.put(SCREENLAYOUT_LAYOUTDIR_RTL, "ldrtl");
+    SCREENLAYOUT_LAYOUTDIR_VALUES = Collections.unmodifiableMap(map);
+  }
+
+  static final int SCREENLAYOUT_LONG_MASK = 0x30;
+  static final int SCREENLAYOUT_LONG_NO   = 0x10;
+  static final int SCREENLAYOUT_LONG_YES  = 0x20;
+
+  private static final Map<Integer, String> SCREENLAYOUT_LONG_VALUES;
+
+  static {
+    Map<Integer, String> map = new HashMap<>();
+    map.put(SCREENLAYOUT_LONG_NO, "notlong");
+    map.put(SCREENLAYOUT_LONG_YES, "long");
+    SCREENLAYOUT_LONG_VALUES = Collections.unmodifiableMap(map);
+  }
+
+  static final int SCREENLAYOUT_ROUND_MASK = 0x03;
+  static final int SCREENLAYOUT_ROUND_NO   = 0x01;
+  static final int SCREENLAYOUT_ROUND_YES  = 0x02;
+
+  private static final Map<Integer, String> SCREENLAYOUT_ROUND_VALUES;
+
+  static {
+    Map<Integer, String> map = new HashMap<>();
+    map.put(SCREENLAYOUT_ROUND_NO, "notround");
+    map.put(SCREENLAYOUT_ROUND_YES, "round");
+    SCREENLAYOUT_ROUND_VALUES = Collections.unmodifiableMap(map);
+  }
+
+  static final int SCREENLAYOUT_SIZE_MASK   = 0x0F;
+  static final int SCREENLAYOUT_SIZE_SMALL  = 0x01;
+  static final int SCREENLAYOUT_SIZE_NORMAL = 0x02;
+  static final int SCREENLAYOUT_SIZE_LARGE  = 0x03;
+  static final int SCREENLAYOUT_SIZE_XLARGE = 0x04;
+
+  private static final Map<Integer, String> SCREENLAYOUT_SIZE_VALUES;
+
+  static {
+    Map<Integer, String> map = new HashMap<>();
+    map.put(SCREENLAYOUT_SIZE_SMALL, "small");
+    map.put(SCREENLAYOUT_SIZE_NORMAL, "normal");
+    map.put(SCREENLAYOUT_SIZE_LARGE, "large");
+    map.put(SCREENLAYOUT_SIZE_XLARGE, "xlarge");
+    SCREENLAYOUT_SIZE_VALUES = Collections.unmodifiableMap(map);
+  }
+
+  static final int TOUCHSCREEN_NOTOUCH = 1;
+  static final int TOUCHSCREEN_FINGER  = 3;
+
+  private static final Map<Integer, String> TOUCHSCREEN_VALUES;
+
+  static {
+    Map<Integer, String> map = new HashMap<>();
+    map.put(TOUCHSCREEN_NOTOUCH, "notouch");
+    map.put(TOUCHSCREEN_FINGER, "finger");
+    TOUCHSCREEN_VALUES = Collections.unmodifiableMap(map);
+  }
+
+  static final int UI_MODE_NIGHT_MASK = 0x30;
+  static final int UI_MODE_NIGHT_NO   = 0x10;
+  static final int UI_MODE_NIGHT_YES  = 0x20;
+
+  private static final Map<Integer, String> UI_MODE_NIGHT_VALUES;
+
+  static {
+    Map<Integer, String> map = new HashMap<>();
+    map.put(UI_MODE_NIGHT_NO, "notnight");
+    map.put(UI_MODE_NIGHT_YES, "night");
+    UI_MODE_NIGHT_VALUES = Collections.unmodifiableMap(map);
+  }
+
+  static final int UI_MODE_TYPE_MASK       = 0x0F;
+  static final int UI_MODE_TYPE_DESK       = 0x02;
+  static final int UI_MODE_TYPE_CAR        = 0x03;
+  static final int UI_MODE_TYPE_TELEVISION = 0x04;
+  static final int UI_MODE_TYPE_APPLIANCE  = 0x05;
+  static final int UI_MODE_TYPE_WATCH      = 0x06;
+  static final int UI_MODE_TYPE_VR_HEADSET = 0x07;
+
+  private static final Map<Integer, String> UI_MODE_TYPE_VALUES;
+
+  static {
+    Map<Integer, String> map = new HashMap<>();
+    map.put(UI_MODE_TYPE_DESK, "desk");
+    map.put(UI_MODE_TYPE_CAR, "car");
+    map.put(UI_MODE_TYPE_TELEVISION, "television");
+    map.put(UI_MODE_TYPE_APPLIANCE, "appliance");
+    map.put(UI_MODE_TYPE_WATCH, "watch");
+    map.put(UI_MODE_TYPE_VR_HEADSET, "vrheadset");
+    UI_MODE_TYPE_VALUES = Collections.unmodifiableMap(map);
+  }
+
+  /** The minimum size in bytes that a {@link ResourceConfiguration} can be. */
+  private static final int MIN_SIZE = 28;
 
   /** The minimum size in bytes that this configuration must be to contain screen config info. */
   private static final int SCREEN_CONFIG_MIN_SIZE = 32;
@@ -195,6 +324,9 @@ public abstract class ResourceConfiguration implements SerializableResource {
 
   /** The minimum size in bytes that this config must be to contain the screenConfig extension. */
   private static final int SCREEN_CONFIG_EXTENSION_MIN_SIZE = 52;
+
+  /** The size of resource configurations in bytes for the latest version of Android resources. */
+  public static final int SIZE = SCREEN_CONFIG_EXTENSION_MIN_SIZE;
 
   /** The number of bytes that this resource configuration takes up. */
   public abstract int size();
@@ -247,14 +379,7 @@ public abstract class ResourceConfiguration implements SerializableResource {
    * @return A copy of this configuration with the only difference being #sdkVersion.
    */
   public final ResourceConfiguration withSdkVersion(int sdkVersion) {
-    if (sdkVersion == sdkVersion()) {
-      return this;
-    }
-    return new AutoValue_ResourceConfiguration(size(), mcc(), mnc(), language(), region(),
-        orientation(), touchscreen(), density(), keyboard(), navigation(), inputFlags(),
-        screenWidth(), screenHeight(), sdkVersion, minorVersion(), screenLayout(), uiMode(),
-        smallestScreenWidthDp(), screenWidthDp(), screenHeightDp(), localeScript(), localeVariant(),
-        screenLayout2(), unknown());
+    return toBuilder().sdkVersion(sdkVersion).build();
   }
 
   public abstract int minorVersion();
@@ -273,7 +398,7 @@ public abstract class ResourceConfiguration implements SerializableResource {
   }
 
   public final int screenLayoutRound() {
-    return screenLayout() & SCREENLAYOUT_ROUND_MASK;
+    return screenLayout2() & SCREENLAYOUT_ROUND_MASK;
   }
 
   public abstract int uiMode();
@@ -294,68 +419,127 @@ public abstract class ResourceConfiguration implements SerializableResource {
   @SuppressWarnings("mutable")
   public abstract byte[] localeScript();
 
+  /** Returns the {@link #localeScript} as a string. */
+  public final String localeScriptString() {
+    return byteArrayToString(localeScript());
+  }
+
   /** A single BCP-47 variant subtag. */
   @SuppressWarnings("mutable")
   public abstract byte[] localeVariant();
 
+  /** Returns the {@link #localeVariant} as a string. */
+  public final String localeVariantString() {
+    return byteArrayToString(localeVariant());
+  }
+
   /** An extension to {@link #screenLayout}. Contains round/notround qualifier. */
   public abstract int screenLayout2();
+
+  /** Wide-gamut, HDR, etc. */
+  public abstract int colorMode();
+
+  /** Returns the wide color gamut section of {@link #colorMode}. */
+  public final int colorModeWideColorGamut() {
+    return colorMode() & COLOR_MODE_WIDE_COLOR_GAMUT_MASK;
+  }
+
+  /** Returns the HDR section of {@link #colorMode}. */
+  public final int colorModeHdr() {
+    return colorMode() & COLOR_MODE_HDR_MASK;
+  }
 
   /** Any remaining bytes in this resource configuration that are unaccounted for. */
   @SuppressWarnings("mutable")
   public abstract byte[] unknown();
 
+  /** Returns this {@link ResourceConfiguration} as a builder. */
+  public abstract Builder toBuilder();
+
+  /** Returns a {@link Builder} with sane default properties. */
+  public static Builder builder() {
+    return new AutoValue_ResourceConfiguration.Builder()
+        .size(SIZE)
+        .mcc(0)
+        .mnc(0)
+        .language(new byte[2])
+        .region(new byte[2])
+        .orientation(0)
+        .touchscreen(0)
+        .density(0)
+        .keyboard(0)
+        .navigation(0)
+        .inputFlags(0)
+        .screenWidth(0)
+        .screenHeight(0)
+        .sdkVersion(0)
+        .minorVersion(0)
+        .screenLayout(0)
+        .uiMode(0)
+        .smallestScreenWidthDp(0)
+        .screenWidthDp(0)
+        .screenHeightDp(0)
+        .localeScript(new byte[4])
+        .localeVariant(new byte[8])
+        .screenLayout2(0)
+        .colorMode(0)
+        .unknown(new byte[0]);
+  }
+
   static ResourceConfiguration create(ByteBuffer buffer) {
     int startPosition = buffer.position();  // The starting buffer position to calculate bytes read.
     int size = buffer.getInt();
-    int mcc = buffer.getShort() & 0xFFFF;
-    int mnc = buffer.getShort() & 0xFFFF;
+    Preconditions.checkArgument(size >= MIN_SIZE,
+        "Expected minimum ResourceConfiguration size of %s, got %s", MIN_SIZE, size);
+    // Builder order is important here. It's the same order as the data stored in the buffer.
+    // The order of the builder's method calls, such as #mcc and #mnc, should not be changed.
+    Builder configurationBuilder = builder()
+        .size(size)
+        .mcc(buffer.getShort() & 0xFFFF)
+        .mnc(buffer.getShort() & 0xFFFF);
     byte[] language = new byte[2];
     buffer.get(language);
     byte[] region = new byte[2];
     buffer.get(region);
-    int orientation = UnsignedBytes.toInt(buffer.get());
-    int touchscreen = UnsignedBytes.toInt(buffer.get());
-    int density = buffer.getShort() & 0xFFFF;
-    int keyboard = UnsignedBytes.toInt(buffer.get());
-    int navigation = UnsignedBytes.toInt(buffer.get());
-    int inputFlags = UnsignedBytes.toInt(buffer.get());
+    configurationBuilder.language(language)
+        .region(region)
+        .orientation(UnsignedBytes.toInt(buffer.get()))
+        .touchscreen(UnsignedBytes.toInt(buffer.get()))
+        .density(buffer.getShort() & 0xFFFF)
+        .keyboard(UnsignedBytes.toInt(buffer.get()))
+        .navigation(UnsignedBytes.toInt(buffer.get()))
+        .inputFlags(UnsignedBytes.toInt(buffer.get()));
     buffer.get();  // 1 byte of padding
-    int screenWidth = buffer.getShort() & 0xFFFF;
-    int screenHeight = buffer.getShort() & 0xFFFF;
-    int sdkVersion = buffer.getShort() & 0xFFFF;
-    int minorVersion = buffer.getShort() & 0xFFFF;
+    configurationBuilder.screenWidth(buffer.getShort() & 0xFFFF)
+        .screenHeight(buffer.getShort() & 0xFFFF)
+        .sdkVersion(buffer.getShort() & 0xFFFF)
+        .minorVersion(buffer.getShort() & 0xFFFF);
 
     // At this point, the configuration's size needs to be taken into account as not all
     // configurations have all values.
-    int screenLayout = 0;
-    int uiMode = 0;
-    int smallestScreenWidthDp = 0;
-    int screenWidthDp = 0;
-    int screenHeightDp = 0;
-    byte[] localeScript = new byte[4];
-    byte[] localeVariant = new byte[8];
-    int screenLayout2 = 0;
-
     if (size >= SCREEN_CONFIG_MIN_SIZE) {
-      screenLayout = UnsignedBytes.toInt(buffer.get());
-      uiMode = UnsignedBytes.toInt(buffer.get());
-      smallestScreenWidthDp = buffer.getShort() & 0xFFFF;
+      configurationBuilder.screenLayout(UnsignedBytes.toInt(buffer.get()))
+          .uiMode(UnsignedBytes.toInt(buffer.get()))
+          .smallestScreenWidthDp(buffer.getShort() & 0xFFFF);
     }
 
     if (size >= SCREEN_DP_MIN_SIZE) {
-      screenWidthDp = buffer.getShort() & 0xFFFF;
-      screenHeightDp = buffer.getShort() & 0xFFFF;
+      configurationBuilder.screenWidthDp(buffer.getShort() & 0xFFFF)
+          .screenHeightDp(buffer.getShort() & 0xFFFF);
     }
 
     if (size >= LOCALE_MIN_SIZE) {
+      byte[] localeScript = new byte[4];
       buffer.get(localeScript);
+      byte[] localeVariant = new byte[8];
       buffer.get(localeVariant);
+      configurationBuilder.localeScript(localeScript)
+          .localeVariant(localeVariant);
     }
 
     if (size >= SCREEN_CONFIG_EXTENSION_MIN_SIZE) {
-      screenLayout2 = UnsignedBytes.toInt(buffer.get());
-      buffer.get();  // Reserved padding
+      configurationBuilder.screenLayout2(UnsignedBytes.toInt(buffer.get()));
+      configurationBuilder.colorMode(UnsignedBytes.toInt(buffer.get()));
       buffer.getShort();  // More reserved padding
     }
 
@@ -363,22 +547,24 @@ public abstract class ResourceConfiguration implements SerializableResource {
     int bytesRead = buffer.position() - startPosition;
     byte[] unknown = new byte[size - bytesRead];
     buffer.get(unknown);
+    configurationBuilder.unknown(unknown);
 
-    return new AutoValue_ResourceConfiguration(size, mcc, mnc, language, region, orientation,
-        touchscreen, density, keyboard, navigation, inputFlags, screenWidth, screenHeight,
-        sdkVersion, minorVersion, screenLayout, uiMode, smallestScreenWidthDp, screenWidthDp,
-        screenHeightDp, localeScript, localeVariant, screenLayout2, unknown);
+    return configurationBuilder.build();
   }
 
   private String unpackLanguage() {
-    return unpackLanguageOrRegion(language(), 0x61);
+    return unpackLanguage(language());
+  }
+
+  public static String unpackLanguage(byte[] language) {
+    return unpackLanguageOrRegion(language, 0x61);
   }
 
   private String unpackRegion() {
     return unpackLanguageOrRegion(region(), 0x30);
   }
 
-  private String unpackLanguageOrRegion(byte[] value, int base) {
+  private static String unpackLanguageOrRegion(byte[] value, int base) {
     Preconditions.checkState(value.length == 2, "Language or region value must be 2 bytes.");
     if (value[0] == 0 && value[1] == 0) {
       return "";
@@ -388,44 +574,84 @@ public abstract class ResourceConfiguration implements SerializableResource {
       result[0] = (byte) (base + (value[1] & 0x1F));
       result[1] = (byte) (base + ((value[1] & 0xE0) >>> 5) + ((value[0] & 0x03) << 3));
       result[2] = (byte) (base + ((value[0] & 0x7C) >>> 2));
-      return new String(result, US_ASCII);
+      return new String(result, Charsets.US_ASCII);
     }
-    return new String(value, US_ASCII);
+    return new String(value, Charsets.US_ASCII);
+  }
+
+  /**
+   * Packs a 2 or 3 character language string into two bytes. If this is a 2 character string the
+   * returned bytes is simply the string bytes, if this is a 3 character string we use a packed
+   * format where the two bytes are:
+   *
+   * <pre>
+   *  +--+--+--+--+--+--+--+--+  +--+--+--+--+--+--+--+--+
+   *  |B |2 |2 |2 |2 |2 |1 |1 |  |1 |1 |1 |0 |0 |0 |0 |0 |
+   *  +--+--+--+--+--+--+--+--+  +--+--+--+--+--+--+--+--+
+   * </pre>
+   *
+   * <p>B : if bit set indicates this is a 3 character string (languages are always old style 7 bit
+   * ascii chars only, so this is never set for a two character language)
+   *
+   * <p>2: The third character - 0x61
+   *
+   * <p>1: The second character - 0x61
+   *
+   * <p>0: The first character - 0x61
+   *
+   * <p>Languages are always lower case chars, so max is within 5 bits (z = 11001)
+   *
+   * @param language The language to pack.
+   * @return The two byte representation of the language
+   */
+  public static byte[] packLanguage(String language) {
+    byte[] unpacked = language.getBytes(Charsets.US_ASCII);
+    if (unpacked.length == 2) {
+      return unpacked;
+    }
+    int base = 0x61;
+    byte[] result = new byte[2];
+    Preconditions.checkState(unpacked.length == 3);
+    for (byte value : unpacked) {
+      Preconditions.checkState(value >= 'a' && value <= 'z');
+    }
+    result[0] = (byte) (((unpacked[2] - base) << 2) | ((unpacked[1] - base) >> 3) | 0x80);
+    result[1] = (byte) ((unpacked[0] - base) | ((unpacked[1] - base) << 5));
+    return result;
+  }
+
+  private String byteArrayToString(byte[] data) {
+    int length = Bytes.indexOf(data, (byte) 0);
+    return new String(data, 0, length >= 0 ? length : data.length, Charsets.US_ASCII);
   }
 
   /** Returns true if this is the default "any" configuration. */
   public final boolean isDefault() {
-    return mcc() == 0
-        && mnc() == 0
-        && Arrays.equals(language(), new byte[2])
-        && Arrays.equals(region(), new byte[2])
-        && orientation() == 0
-        && touchscreen() == 0
-        && density() == 0
-        && keyboard() == 0
-        && navigation() == 0
-        && inputFlags() == 0
-        && screenWidth() == 0
-        && screenHeight() == 0
-        && sdkVersion() == 0
-        && minorVersion() == 0
-        && screenLayout() == 0
-        && uiMode() == 0
-        && smallestScreenWidthDp() == 0
-        && screenWidthDp() == 0
-        && screenHeightDp() == 0
-        && Arrays.equals(localeScript(), new byte[4])
-        && Arrays.equals(localeVariant(), new byte[8])
-        && screenLayout2() == 0;
+    // Ignore size and unknown when checking if this is the default configuration. It's possible
+    // that we're comparing against a different version.
+    return DEFAULT_BUILDER.size(size()).unknown(unknown()).build().equals(this)
+        && Arrays.equals(unknown(), new byte[unknown().length]);
+  }
+
+  public final boolean isDensityCompatibleWith(int deviceDensityDpi) {
+    int configDensity = density();
+    switch (configDensity) {
+      case DENSITY_DPI_UNDEFINED:
+      case DENSITY_DPI_ANY:
+      case DENSITY_DPI_NONE:
+        return true;
+      default:
+        return configDensity <= deviceDensityDpi;
+    }
   }
 
   @Override
   public final byte[] toByteArray() {
-    return toByteArray(false);
+    return toByteArray(SerializableResource.NONE);
   }
 
   @Override
-  public final byte[] toByteArray(boolean shrink) {
+  public final byte[] toByteArray(int options) {
     ByteBuffer buffer = ByteBuffer.allocate(size()).order(ByteOrder.LITTLE_ENDIAN);
     buffer.putInt(size());
     buffer.putShort((short) mcc());
@@ -461,7 +687,9 @@ public abstract class ResourceConfiguration implements SerializableResource {
     }
 
     if (size() >= SCREEN_CONFIG_EXTENSION_MIN_SIZE) {
-      buffer.putInt(screenLayout2());  // Writing an unsigned byte + 3 padding
+      buffer.put((byte) screenLayout2());
+      buffer.put((byte) colorMode());
+      buffer.putShort((short) 0); // Writing 2 bytes of padding
     }
 
     buffer.put(unknown());
@@ -474,9 +702,42 @@ public abstract class ResourceConfiguration implements SerializableResource {
     if (isDefault()) {  // Prevent the default configuration from returning the empty string
       return "default";
     }
-    Collection<String> parts = toStringParts().values();
-    parts.removeAll(Collections.singleton(""));
-    return Joiner.on('-').join(parts);
+    Map<Type, String> parts = toStringParts();
+    mergeLocale(parts);
+    Collection<String> values = parts.values();
+    values.removeAll(Collections.singleton(""));
+    return Joiner.on('-').join(values);
+  }
+
+  /**
+   * Merges the locale for {@code parts} if necessary.
+   *
+   * <p>Android supports a modified BCP 47 tag containing script and variant. If script or variant
+   * are provided in the configuration, then the locale section should appear as:
+   *
+   * <p>{@code b+language+script+region+variant}
+   */
+  private void mergeLocale(Map<Type, String> parts) {
+    String script = localeScriptString();
+    String variant = localeVariantString();
+    if (script.isEmpty() && variant.isEmpty()) {
+      return;
+    }
+    StringBuilder locale = new StringBuilder("b+").append(languageString());
+    if (!script.isEmpty()) {
+      locale.append("+" + script);
+    }
+    String region = regionString();
+    if (!region.isEmpty()) {
+      locale.append("+" + region);
+    }
+    if (!variant.isEmpty()) {
+      locale.append("+" + variant);
+    }
+    parts.put(Type.LANGUAGE_STRING, locale.toString());
+    parts.remove(Type.LOCALE_SCRIPT_STRING);
+    parts.remove(Type.REGION_STRING);
+    parts.remove(Type.LOCALE_VARIANT_STRING);
   }
 
   /**
@@ -489,8 +750,10 @@ public abstract class ResourceConfiguration implements SerializableResource {
     Map<Type, String> result = new LinkedHashMap<>();  // Preserve order for #toString().
     result.put(Type.MCC, mcc() != 0 ? "mcc" + mcc() : "");
     result.put(Type.MNC, mnc() != 0 ? "mnc" + mnc() : "");
-    result.put(Type.LANGUAGE_STRING, !languageString().isEmpty() ? "" + languageString() : "");
+    result.put(Type.LANGUAGE_STRING, languageString());
+    result.put(Type.LOCALE_SCRIPT_STRING, localeScriptString());
     result.put(Type.REGION_STRING, !regionString().isEmpty() ? "r" + regionString() : "");
+    result.put(Type.LOCALE_VARIANT_STRING, localeVariantString());
     result.put(Type.SCREEN_LAYOUT_DIRECTION,
         getOrDefault(SCREENLAYOUT_LAYOUTDIR_VALUES, screenLayoutDirection(), ""));
     result.put(Type.SMALLEST_SCREEN_WIDTH_DP,
@@ -503,6 +766,10 @@ public abstract class ResourceConfiguration implements SerializableResource {
         getOrDefault(SCREENLAYOUT_LONG_VALUES, screenLayoutLong(), ""));
     result.put(Type.SCREEN_LAYOUT_ROUND,
         getOrDefault(SCREENLAYOUT_ROUND_VALUES, screenLayoutRound(), ""));
+    result.put(Type.COLOR_MODE_HDR, getOrDefault(COLOR_MODE_HDR_VALUES, colorModeHdr(), ""));
+    result.put(
+        Type.COLOR_MODE_WIDE_COLOR_GAMUT,
+        getOrDefault(COLOR_MODE_WIDE_COLOR_GAMUT_VALUES, colorModeWideColorGamut(), ""));
     result.put(Type.ORIENTATION, getOrDefault(ORIENTATION_VALUES, orientation(), ""));
     result.put(Type.UI_MODE_TYPE, getOrDefault(UI_MODE_TYPE_VALUES, uiModeType(), ""));
     result.put(Type.UI_MODE_NIGHT, getOrDefault(UI_MODE_NIGHT_VALUES, uiModeNight(), ""));
@@ -513,7 +780,17 @@ public abstract class ResourceConfiguration implements SerializableResource {
     result.put(Type.NAVIGATION_HIDDEN,
         getOrDefault(NAVIGATIONHIDDEN_VALUES, navigationHidden(), ""));
     result.put(Type.NAVIGATION, getOrDefault(NAVIGATION_VALUES, navigation(), ""));
-    result.put(Type.SDK_VERSION, sdkVersion() != 0 ? "v" + sdkVersion() : "");
+    result.put(Type.SCREEN_SIZE,
+        screenWidth() != 0 || screenHeight() != 0 ? screenWidth() + "x" + screenHeight() : "");
+
+    String sdkVersion = "";
+    if (sdkVersion() != 0) {
+      sdkVersion = "v" + sdkVersion();
+      if (minorVersion() != 0) {
+        sdkVersion += "." + minorVersion();
+      }
+    }
+    result.put(Type.SDK_VERSION, sdkVersion);
     return result;
   }
 
@@ -522,5 +799,40 @@ public abstract class ResourceConfiguration implements SerializableResource {
     // Null is not returned, even if the map contains a key whose value is null. This is intended.
     V value = map.get(key);
     return value != null ? value : defaultValue;
+  }
+
+  /** Provides a builder for creating {@link ResourceConfiguration} instances. */
+  @AutoValue.Builder
+  public abstract static class Builder {
+
+    public abstract Builder size(int size);
+    public abstract Builder mcc(int mcc);
+    public abstract Builder mnc(int mnc);
+    public abstract Builder language(byte[] language);
+    public abstract Builder region(byte[] region);
+    public abstract Builder orientation(int orientation);
+    public abstract Builder touchscreen(int touchscreen);
+    public abstract Builder density(int density);
+    public abstract Builder keyboard(int keyboard);
+    public abstract Builder navigation(int navigation);
+    public abstract Builder inputFlags(int inputFlags);
+    public abstract Builder screenWidth(int screenWidth);
+    public abstract Builder screenHeight(int screenHeight);
+    public abstract Builder sdkVersion(int sdkVersion);
+    public abstract Builder minorVersion(int minorVersion);
+    public abstract Builder screenLayout(int screenLayout);
+    public abstract Builder uiMode(int uiMode);
+    public abstract Builder smallestScreenWidthDp(int smallestScreenWidthDp);
+    public abstract Builder screenWidthDp(int screenWidthDp);
+    public abstract Builder screenHeightDp(int screenHeightDp);
+    public abstract Builder localeScript(byte[] localeScript);
+    public abstract Builder localeVariant(byte[] localeVariant);
+    public abstract Builder screenLayout2(int screenLayout2);
+
+    public abstract Builder colorMode(int colorMode);
+
+    abstract Builder unknown(byte[] unknown);
+
+    public abstract ResourceConfiguration build();
   }
 }

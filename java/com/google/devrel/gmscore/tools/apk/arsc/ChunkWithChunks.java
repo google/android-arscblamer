@@ -16,18 +16,19 @@
 
 package com.google.devrel.gmscore.tools.apk.arsc;
 
+import com.google.common.base.Preconditions;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
-
 import javax.annotation.Nullable;
 
 /** Represents a chunk whose payload is a list of sub-chunks. */
 public abstract class ChunkWithChunks extends Chunk {
 
-  private final Map<Integer, Chunk> chunks = new LinkedHashMap<>();
+  protected final Map<Integer, Chunk> chunks = new LinkedHashMap<>();
 
   protected ChunkWithChunks(ByteBuffer buffer, @Nullable Chunk parent) {
     super(buffer, parent);
@@ -44,12 +45,23 @@ public abstract class ChunkWithChunks extends Chunk {
     buffer.position(start);
 
     while (offset < end) {
-      Chunk chunk = Chunk.newInstance(buffer, this);
+      Chunk chunk = createChildInstance(buffer);
       chunks.put(offset, chunk);
       offset += chunk.getOriginalChunkSize();
     }
 
     buffer.position(position);
+  }
+
+  /**
+   * Allows subclasses to decide how child instances should be instantiated, e.g., compressed chunks
+   * might use a different method to extract compressed data first.
+   *
+   * @param buffer The buffer to read from
+   * @return The child instance.
+   */
+  protected Chunk createChildInstance(ByteBuffer buffer) {
+    return Chunk.newInstance(buffer, this);
   }
 
   /**
@@ -61,11 +73,31 @@ public abstract class ChunkWithChunks extends Chunk {
     return chunks;
   }
 
+  /** Removes the {@code chunk } from the list of sub-chunks. */
+  protected void remove(Chunk chunk) {
+    Chunk deleted = chunks.remove(chunk.offset);
+    if (chunk != deleted) {
+       throw new IllegalStateException(
+          String.format("Can't remove %s.", chunk.getClass()));
+    }
+  }
+
+  protected void add(Chunk chunk) {
+    int offset = 0;
+    if (chunks.size() > 0) {
+      int oldMax = Collections.max(chunks.keySet());
+      Chunk oldChunk = Preconditions.checkNotNull(chunks.get(oldMax));
+      offset = oldMax + oldChunk.getOriginalChunkSize();
+    }
+    chunks.put(offset, chunk);
+    Preconditions.checkArgument(chunk.getParent() == this);
+  }
+
   @Override
-  protected void writePayload(DataOutput output, ByteBuffer header, boolean shrink)
+  protected void writePayload(DataOutput output, ByteBuffer header, int options)
       throws IOException {
     for (Chunk chunk : getChunks().values()) {
-      byte[] chunkBytes = chunk.toByteArray(shrink);
+      byte[] chunkBytes = chunk.toByteArray(options);
       output.write(chunkBytes);
       writePad(output, chunkBytes.length);
     }

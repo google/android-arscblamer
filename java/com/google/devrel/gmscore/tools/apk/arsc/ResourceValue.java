@@ -18,12 +18,11 @@ package com.google.devrel.gmscore.tools.apk.arsc;
 
 import com.google.auto.value.AutoValue;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableMap.Builder;
 import com.google.common.primitives.UnsignedBytes;
-
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 
 /** Represents a single typed resource value. */
@@ -48,6 +47,8 @@ public abstract class ResourceValue implements SerializableResource {
     FRACTION(0x06),
     /** {@code data} holds a dynamic {@link ResourceTableChunk} entry reference. */
     DYNAMIC_REFERENCE(0x07),
+    /** {@code data} holds a dynamic attribute resource identifier. */
+    DYNAMIC_ATTRIBUTE(0x08),
     /** {@code data} is a raw integer value of the form n..n. */
     INT_DEC(0x10),
     /** {@code data} is a raw integer value of the form 0xn..n. */
@@ -68,11 +69,11 @@ public abstract class ResourceValue implements SerializableResource {
     private static final Map<Byte, Type> FROM_BYTE;
 
     static {
-      Builder<Byte, Type> builder = ImmutableMap.builder();
+      Map<Byte, Type> map = new HashMap<>();
       for (Type type : values()) {
-        builder.put(type.code(), type);
+        map.put(type.code(), type);
       }
-      FROM_BYTE = builder.build();
+      FROM_BYTE = Collections.unmodifiableMap(map);
     }
 
     Type(int code) {
@@ -100,26 +101,93 @@ public abstract class ResourceValue implements SerializableResource {
   /** The actual 4-byte value; interpretation of the value depends on {@code dataType}. */
   public abstract int data();
 
+  /** A builder for {@link ResourceValue} instances. */
+  @AutoValue.Builder
+  public abstract static class Builder {
+    public abstract Builder size(int s);
+
+    public abstract Builder type(Type t);
+
+    public abstract Builder data(int d);
+
+    public abstract ResourceValue build();
+  }
+
+  /** Returns a new, empty builder for {@link ResourceValue} instances. */
+  public static Builder builder() {
+    return new AutoValue_ResourceValue.Builder();
+  }
+
+  abstract Builder toBuilder();
+
+  ResourceValue withData(int d) {
+    return toBuilder().data(d).build();
+  }
+
   public static ResourceValue create(ByteBuffer buffer) {
     int size = (buffer.getShort() & 0xFFFF);
     buffer.get();  // Unused
     Type type = Type.fromCode(buffer.get());
     int data = buffer.getInt();
-    return new AutoValue_ResourceValue(size, type, data);
+    return builder().size(size).type(type).data(data).build();
   }
 
   @Override
   public byte[] toByteArray() {
-    return toByteArray(false);
+    return toByteArray(SerializableResource.NONE);
   }
 
   @Override
-  public byte[] toByteArray(boolean shrink) {
+  public byte[] toByteArray(int options) {
     ByteBuffer buffer = ByteBuffer.allocate(SIZE).order(ByteOrder.LITTLE_ENDIAN);
     buffer.putShort((short) size());
     buffer.put((byte) 0);  // Unused
     buffer.put(type().code());
     buffer.putInt(data());
     return buffer.array();
+  }
+
+  private String dataHexString() {
+    return String.format("0x%08x", data());
+  }
+
+  @Override
+  public String toString() {
+    switch (type()) {
+      case NULL:
+        return data() == 0 ? "null" : "empty";
+      case REFERENCE:
+        return "ref(" + dataHexString() + ")";
+      case ATTRIBUTE:
+        return "attr(" + dataHexString() + ")";
+      case STRING:
+        return "string(" + dataHexString() + ")";
+      case FLOAT:
+        return "float(" + data() + ")";
+      case DIMENSION:
+        return "dimen(" + data() + ")";
+      case FRACTION:
+        return "frac(" + data() + ")";
+      case DYNAMIC_REFERENCE:
+        return "dynref(" + dataHexString() + ")";
+      case DYNAMIC_ATTRIBUTE:
+        return "dynattr(" + dataHexString() + ")";
+      case INT_DEC:
+        return "dec(" + data() + ")";
+      case INT_HEX:
+        return "hex(" + dataHexString() + ")";
+      case INT_BOOLEAN:
+        return "bool(" + data() + ")";
+      case INT_COLOR_ARGB8:
+        return "argb8(" + dataHexString() + ")";
+      case INT_COLOR_RGB8:
+        return "rgb8(" + dataHexString() + ")";
+      case INT_COLOR_ARGB4:
+        return "argb4(" + dataHexString() + ")";
+      case INT_COLOR_RGB4:
+        return "rgb4(" + dataHexString() + ")";
+      default:
+        return "<invalid value>";
+    }
   }
 }

@@ -18,7 +18,6 @@ package com.google.devrel.gmscore.tools.apk.arsc;
 
 import com.google.common.io.ByteArrayDataOutput;
 import com.google.common.io.ByteStreams;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -33,11 +32,15 @@ public final class ResourceFile implements SerializableResource {
   /** The chunks contained in this resource file. */
   private final List<Chunk> chunks = new ArrayList<>();
 
-  public ResourceFile(byte[] buf) {
-    ByteBuffer buffer = ByteBuffer.wrap(buf).order(ByteOrder.LITTLE_ENDIAN);
-    while (buffer.remaining() > 0) {
-      chunks.add(Chunk.newInstance(buffer));
+  public ResourceFile(ByteBuffer buf) {
+    buf.order(ByteOrder.LITTLE_ENDIAN);
+    while (buf.remaining() > 0) {
+      chunks.add(Chunk.newInstance(buf));
     }
+  }
+  
+  public ResourceFile(byte[] buf) {
+    this(ByteBuffer.wrap(buf));
   }
 
   /**
@@ -60,14 +63,14 @@ public final class ResourceFile implements SerializableResource {
 
   @Override
   public byte[] toByteArray() throws IOException {
-    return toByteArray(false);
+    return toByteArray(SerializableResource.NONE);
   }
 
   @Override
-  public byte[] toByteArray(boolean shrink) throws IOException {
+  public byte[] toByteArray(int options) throws IOException {
     ByteArrayDataOutput output = ByteStreams.newDataOutput();
     for (Chunk chunk : chunks) {
-      output.write(chunk.toByteArray(shrink));
+      output.write(chunk.toByteArray(options));
     }
     return output.toByteArray();
   }

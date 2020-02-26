@@ -17,14 +17,12 @@
 package com.google.devrel.gmscore.tools.apk.arsc;
 
 import com.google.auto.value.AutoValue;
-
 import java.io.DataOutput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
-
 import javax.annotation.Nullable;
 
 /**
@@ -75,10 +73,10 @@ public final class LibraryChunk extends Chunk {
   }
 
   @Override
-  protected void writePayload(DataOutput output, ByteBuffer header, boolean shrink)
+  protected void writePayload(DataOutput output, ByteBuffer header, int options)
       throws IOException {
     for (Entry entry : entries) {
-      output.write(entry.toByteArray(shrink));
+      output.write(entry.toByteArray(options));
     }
   }
 
@@ -103,11 +101,11 @@ public final class LibraryChunk extends Chunk {
 
     @Override
     public byte[] toByteArray() throws IOException {
-      return toByteArray(false);
+      return toByteArray(SerializableResource.NONE);
     }
 
     @Override
-    public byte[] toByteArray(boolean shrink) throws IOException {
+    public byte[] toByteArray(int options) throws IOException {
       ByteBuffer buffer = ByteBuffer.allocate(SIZE).order(ByteOrder.LITTLE_ENDIAN);
       buffer.putInt(packageId());
       PackageUtils.writePackageName(buffer, packageName());
