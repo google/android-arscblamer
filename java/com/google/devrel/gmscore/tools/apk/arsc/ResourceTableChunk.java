@@ -49,7 +49,7 @@ public class ResourceTableChunk extends ChunkWithChunks {
   protected ResourceTableChunk(ByteBuffer buffer, @Nullable Chunk parent) {
     super(buffer, parent);
     // packageCount. We ignore this, because we already know how many chunks we have.
-    Preconditions.checkState(buffer.getInt() >= 1, "ResourceTableChunk package count was < 1.");
+    Preconditions.checkState(buffer.getInt() >= 0, "ResourceTableChunk package count was < 0.");
   }
 
   @Override
